@@ -1,0 +1,121 @@
+const fs = require('fs');
+const path = require('path');
+const XLSX = require('xlsx');
+const yaml = require('js-yaml');
+
+const readlineSync = require('readline-sync');
+const yearMonth = readlineSync.question('対象年月（yyyymm）：');
+const year = parseInt(yearMonth.slice(0, 4));
+const month = parseInt(yearMonth.slice(4, 6));
+const fiscalYear = month <= 3 ? year - 1 : year;
+const dirpath = String.raw`C:\Users\jfe106005\Box\02_PPP事業部\03_PPP_管理G\B_損益\\${fiscalYear}年度\c_実績管理\01_運営部用\03_関西\\${yearMonth}`;
+
+//const entries = fs.readdirSync(dirpath, {withFileTypes: true});
+//const files = entries.filter(e => e.isFile()).map(e => e.name);
+
+const filename = 'EJ24E鈴鹿）_2026損益管理表(ENG）.xlsm';
+const sheetName = '実績_エクセル内計算';
+const wb = XLSX.readFile(dirpath + `\\${filename}`);
+const ws = wb.Sheets[sheetName];
+//const commonHeader = ['年度計画', '7月見直し', '10月見直し', '1月見直し', '推定実績', '最新実績'];
+
+const summaryKeys = ['waste', 'total', 'cost_breakdown'];
+const waste_categories = ['受入量', '処理量']
+const total_category = ['売上', '原価', '粗利'];
+const cost_item_names = {
+    '用役・薬剤': {
+        '用役': {
+            '電力（買電）': 17,
+            'ガス（LNG）': 18,
+            'コークス': 19,
+            '灯油': 20,
+            '上下水道': 21
+        },
+        '薬剤': {
+            '高分子重金属捕集剤': 23,
+            '消石灰': 24,
+            '苛性ソーダ': 25,
+            'アンモニア・尿素水': 26,
+            '活性炭': 27
+        },
+        '灰溶融炉資材': {
+            '灰溶融炉資材': 29
+        },
+        'その他用役・薬剤・消耗品': {
+            'その他用役・薬剤・消耗品': 30
+        }
+    },
+    '副産物': {
+        '売電': {
+            '売電': 32
+        },
+        '灰処理費用': {
+            '灰処理費用': 33
+        },
+        'その他副産物': {
+            'その他副産物':34
+        }
+    },
+    '運転委託': {
+        '運転委託': {
+            '運転委託':36
+        }
+    },
+    '維持管理（制御・ｼﾋﾞﾙ含）': {
+        '維持管理（制御・ｼﾋﾞﾙ含）': {
+            '維持管理（制御・ｼﾋﾞﾙ含）': 37
+        }
+    },
+    '工費': {
+        '工費':{
+            '工費':38
+        }
+    },
+    '経費（予備費含）': {
+        '経費（予備費含）': {
+            '経費（予備費含）':39
+        }
+    }
+};
+
+function getItems(row, targetColumns){
+    tvalue = targetColumns.map(v => ws[`${v}${row}`]?.v ?? null);
+    return {
+        "budget": tvalue[0],
+        "forecast": tvalue[1],
+        "actual": tvalue[2],
+        "variance": tvalue[3],
+        "remarks": tvalue[4]
+    };
+};
+
+function getCost(category, subCategory, item, row){
+    return {    
+        'category': category,
+        'subCategory': subCategory,
+        'item': item,
+        'data': {
+            'monthly': getItems(row, ['H', 'L', 'M', 'N', 'O']),
+            'ytd': getItems(row, ['Q', 'U', 'V', 'W', 'Y'] ),
+            'outlook': getItems(row, ['AA', 'AE', 'AF', 'AG', 'AH']),
+        }
+    }
+}
+
+const dataset = Object.entries(cost_item_names).flatMap(([cat, v1]) =>
+    Object.entries(v1).flatMap(([scat, v2]) =>
+        Object.entries(v2).flatMap(([itm, r]) =>
+            getCost(cat, scat, itm, r)
+        )
+    )
+);
+
+const ymlDataset = yaml.dump(dataset);
+
+const BOM = '\uFEFF';
+fs.writeFileSync(dirpath +`\\output.yml`,
+    BOM + JSON.stringify(ymlDataset, null, 2),
+    'utf-8'
+);
+
+
